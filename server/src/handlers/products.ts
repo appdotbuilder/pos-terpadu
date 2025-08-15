@@ -1,26 +1,52 @@
+import { db } from '../db';
+import { productsTable, productCategoriesTable } from '../db/schema';
 import { type CreateProductInput, type Product, type CreateProductCategoryInput, type ProductCategory } from '../schema';
+import { eq } from 'drizzle-orm';
 
 export async function createProduct(input: CreateProductInput): Promise<Product> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is creating a new product with automatic SKU generation and stock initialization.
-    return Promise.resolve({
-        id: 0,
-        sku: input.sku,
-        barcode: input.barcode,
-        name: input.name,
-        description: input.description,
-        category_id: input.category_id,
-        base_price: input.base_price,
-        selling_price: input.selling_price,
-        unit: input.unit,
-        min_stock: input.min_stock,
-        is_active: true,
-        has_variants: input.has_variants,
-        is_raw_material: input.is_raw_material,
-        image_url: input.image_url,
-        created_at: new Date(),
-        updated_at: new Date()
-    } as Product);
+    try {
+        // Verify category exists if provided
+        if (input.category_id) {
+            const category = await db.select()
+                .from(productCategoriesTable)
+                .where(eq(productCategoriesTable.id, input.category_id))
+                .execute();
+
+            if (category.length === 0) {
+                throw new Error(`Category with id ${input.category_id} does not exist`);
+            }
+        }
+
+        // Insert product record
+        const result = await db.insert(productsTable)
+            .values({
+                sku: input.sku,
+                barcode: input.barcode,
+                name: input.name,
+                description: input.description,
+                category_id: input.category_id,
+                base_price: input.base_price.toString(), // Convert number to string for numeric column
+                selling_price: input.selling_price.toString(), // Convert number to string for numeric column
+                unit: input.unit,
+                min_stock: input.min_stock, // Integer column - no conversion needed
+                has_variants: input.has_variants,
+                is_raw_material: input.is_raw_material,
+                image_url: input.image_url
+            })
+            .returning()
+            .execute();
+
+        // Convert numeric fields back to numbers before returning
+        const product = result[0];
+        return {
+            ...product,
+            base_price: parseFloat(product.base_price), // Convert string back to number
+            selling_price: parseFloat(product.selling_price) // Convert string back to number
+        };
+    } catch (error) {
+        console.error('Product creation failed:', error);
+        throw error;
+    }
 }
 
 export async function getProducts(categoryId?: number, isActive?: boolean): Promise<Product[]> {

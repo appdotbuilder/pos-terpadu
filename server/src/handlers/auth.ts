@@ -1,21 +1,49 @@
+import { db } from '../db';
+import { usersTable, branchesTable } from '../db/schema';
 import { type CreateUserInput, type User } from '../schema';
+import { eq } from 'drizzle-orm';
+import { createHash, randomBytes, pbkdf2Sync } from 'crypto';
 
 export async function createUser(input: CreateUserInput): Promise<User> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is creating a new user with hashed password and proper role assignment.
-    return Promise.resolve({
-        id: 0,
-        email: input.email,
-        password_hash: 'hashed_password_placeholder',
-        full_name: input.full_name,
-        role: input.role,
-        branch_id: input.branch_id,
-        is_active: true,
-        two_factor_enabled: false,
-        last_login: null,
-        created_at: new Date(),
-        updated_at: new Date()
-    } as User);
+    try {
+        // Validate branch exists if branch_id is provided
+        if (input.branch_id) {
+            const branch = await db.select()
+                .from(branchesTable)
+                .where(eq(branchesTable.id, input.branch_id))
+                .execute();
+            
+            if (branch.length === 0) {
+                throw new Error('Branch not found');
+            }
+        }
+
+        // Hash password using PBKDF2
+        const salt = randomBytes(16).toString('hex');
+        const iterations = 100000;
+        const keyLength = 64;
+        const digest = 'sha256';
+        
+        const hashedPassword = pbkdf2Sync(input.password, salt, iterations, keyLength, digest).toString('hex');
+        const storedHash = `${salt}:${hashedPassword}`;
+
+        // Insert user record
+        const result = await db.insert(usersTable)
+            .values({
+                email: input.email,
+                password_hash: storedHash,
+                full_name: input.full_name,
+                role: input.role,
+                branch_id: input.branch_id
+            })
+            .returning()
+            .execute();
+
+        return result[0];
+    } catch (error) {
+        console.error('User creation failed:', error);
+        throw error;
+    }
 }
 
 export async function authenticateUser(email: string, password: string): Promise<User | null> {

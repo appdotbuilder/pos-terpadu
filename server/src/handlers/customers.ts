@@ -1,12 +1,17 @@
+import { db } from '../db';
+import { customersTable } from '../db/schema';
 import { type CreateCustomerInput, type Customer } from '../schema';
 
 export async function createCustomer(input: CreateCustomerInput): Promise<Customer> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is creating a new customer with automatic customer code generation.
-    const customerCode = `CUST-${Date.now()}`;
+  try {
+    // Generate unique customer code with additional randomness to prevent collisions
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    const customerCode = `CUST-${timestamp}-${random}`;
     
-    return Promise.resolve({
-        id: 0,
+    // Insert customer record
+    const result = await db.insert(customersTable)
+      .values({
         customer_code: customerCode,
         name: input.name,
         email: input.email,
@@ -14,12 +19,23 @@ export async function createCustomer(input: CreateCustomerInput): Promise<Custom
         address: input.address,
         membership_type: input.membership_type,
         loyalty_points: 0,
-        total_spent: 0,
+        total_spent: '0', // Convert number to string for numeric column
         last_visit: null,
-        is_active: true,
-        created_at: new Date(),
-        updated_at: new Date()
-    } as Customer);
+        is_active: true
+      })
+      .returning()
+      .execute();
+
+    // Convert numeric fields back to numbers before returning
+    const customer = result[0];
+    return {
+      ...customer,
+      total_spent: parseFloat(customer.total_spent) // Convert string back to number
+    };
+  } catch (error) {
+    console.error('Customer creation failed:', error);
+    throw error;
+  }
 }
 
 export async function getCustomers(searchQuery?: string): Promise<Customer[]> {
